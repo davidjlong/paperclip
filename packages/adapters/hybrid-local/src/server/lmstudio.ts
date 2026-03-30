@@ -160,10 +160,11 @@ export async function executeLocalModel(opts: {
   model: string;
   prompt: string;
   cwd: string;
+  enableTools: boolean;
   timeoutMs: number;
   onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
 }): Promise<LMStudioResult> {
-  const { baseUrl, model, prompt, cwd, timeoutMs, onLog } = opts;
+  const { baseUrl, model, prompt, cwd, enableTools, timeoutMs, onLog } = opts;
   const url = `${baseUrl}/chat/completions`;
   const deadline = Date.now() + timeoutMs;
 
@@ -173,7 +174,38 @@ export async function executeLocalModel(opts: {
   let lastContent = "";
   let turn = 0;
 
-  await onLog("stdout", `[hybrid] Local: POST ${url} model=${model}\n`);
+  await onLog("stdout", `[hybrid] Local: POST ${url} model=${model}${enableTools ? " (tool-use)" : ""}\n`);
+
+  // Single-shot mode: no tools, one request, return immediately
+  if (!enableTools) {
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages,
+          stream: false,
+          temperature: 0.1,
+        }),
+      },
+      timeoutMs,
+    );
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      throw new Error(`LM Studio returned ${response.status}: ${errorBody || response.statusText}`);
+    }
+    const body = (await response.json()) as ChatCompletionResponse;
+    const content = body.choices?.[0]?.message?.content ?? "";
+    const usage: UsageSummary = {
+      inputTokens: body.usage?.prompt_tokens ?? 0,
+      outputTokens: body.usage?.completion_tokens ?? 0,
+      cachedInputTokens: 0,
+    };
+    await onLog("stdout", `[hybrid] Local: completed (${usage.inputTokens} in / ${usage.outputTokens} out)\n`);
+    return { summary: content, model: body.model || model, usage, finishReason: body.choices?.[0]?.finish_reason ?? null };
+  }
 
   while (turn < MAX_TOOL_TURNS) {
     const remainingMs = deadline - Date.now();

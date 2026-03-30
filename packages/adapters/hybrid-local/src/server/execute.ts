@@ -350,11 +350,19 @@ async function executeLocal(
     });
   }
 
+  // Only enable tool use when cwd is explicitly set in adapterConfig.
+  // Agents without an explicit cwd (support, content, strategy roles) run
+  // single-shot — they don't need bash access and tool turns burn context.
+  const explicitCwd = typeof config.cwd === "string" && (config.cwd as string).trim().length > 0
+    ? (config.cwd as string).trim()
+    : null;
+
   const result = await executeLocalModel({
     baseUrl: localBaseUrl,
     model,
     prompt,
-    cwd: asString(config.cwd, process.cwd()),
+    cwd: explicitCwd ?? process.cwd(),
+    enableTools: explicitCwd !== null,
     timeoutMs: timeoutSec * 1000,
     onLog,
   });
