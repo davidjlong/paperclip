@@ -816,7 +816,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   </div>
                 </>
               )}
-              {adapterType === "claude_local" && (
+              {(adapterType === "claude_local" || adapterType === "hybrid_local") && (
                 <ClaudeLocalAdvancedFields {...adapterFieldProps} />
               )}
 
