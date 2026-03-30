@@ -8,8 +8,15 @@ import {
 const inputClass =
   "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
 
+const selectClass =
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 appearance-none cursor-pointer";
+
 export function HybridLocalConfigFields(props: AdapterConfigFieldsProps) {
-  const { isCreate, values, set, config, eff, mark } = props;
+  const { isCreate, values, set, config, eff, mark, models } = props;
+
+  const currentFallback = isCreate
+    ? ""
+    : eff("adapterConfig", "fallbackModel", String(config.fallbackModel ?? ""));
 
   return (
     <>
@@ -43,27 +50,27 @@ export function HybridLocalConfigFields(props: AdapterConfigFieldsProps) {
 
       <Field
         label="Fallback model"
-        hint="Model to use when the primary is unavailable. Can be Claude (e.g. claude-haiku-4-6) or local. Leave empty to disable fallback."
+        hint="Model to use when the primary is unavailable. Claude → local fallback, or local → Claude fallback. Leave as 'None' to disable."
       >
-        <DraftInput
-          value={
-            isCreate
-              ? ""
-              : eff(
-                  "adapterConfig",
-                  "fallbackModel",
-                  String(config.fallbackModel ?? ""),
-                )
-          }
-          onCommit={(v) =>
-            isCreate
-              ? set?.({})
-              : mark("adapterConfig", "fallbackModel", v || undefined)
-          }
-          immediate
-          className={inputClass}
-          placeholder="claude-haiku-4-6 or qwen/qwen3.5-9b"
-        />
+        <select
+          className={selectClass}
+          value={currentFallback}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (isCreate) {
+              set?.({});
+            } else {
+              mark("adapterConfig", "fallbackModel", v || undefined);
+            }
+          }}
+        >
+          <option value="">None (no fallback)</option>
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
       </Field>
     </>
   );
