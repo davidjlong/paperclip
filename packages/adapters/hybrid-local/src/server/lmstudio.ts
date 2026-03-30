@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1";
 const MAX_TOOL_TURNS = 30;
-const BASH_TIMEOUT_MS = 60_000;
+const BASH_TIMEOUT_MS = 120_000;
 
 export interface LMStudioResult {
   summary: string;
