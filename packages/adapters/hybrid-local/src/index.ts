@@ -1,19 +1,15 @@
 export const type = "hybrid_local";
 export const label = "Hybrid (local)";
 
+// Only Claude models are hardcoded — local models are discovered dynamically
+// from LM Studio's /v1/models endpoint via listLMStudioModels() in registry.ts.
+// Hardcoding local model IDs here causes stale IDs to be stored in agent configs
+// when LM Studio updates its naming convention.
 export const models = [
-  // Claude models (routed to Claude CLI)
   { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
   { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
   { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
   { id: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5" },
-  // Local models (routed to OpenAI-compatible endpoint)
-  { id: "qwen/qwen3.5-9b", label: "Qwen 3.5 9B (Local)" },
-  { id: "qwen/qwen3.5-35b-a3b", label: "Qwen 3.5 35B A3B (Local)" },
-  { id: "qwen/qwen2.5-coder-32b", label: "Qwen 2.5 Coder 32B (Local)" },
-  { id: "qwen/qwen2.5-coder-7b", label: "Qwen 2.5 Coder 7B (Local)" },
-  { id: "deepseek-coder-v2:16b", label: "DeepSeek Coder V2 16B (Local)" },
-  { id: "deepseek-r1:8b", label: "DeepSeek R1 8B (Local)" },
 ];
 
 export function isClaudeModel(model: string): boolean {
