@@ -10,11 +10,11 @@ describe("hybrid_local adapter metadata", () => {
     expect(label).toBe("Hybrid (local)");
   });
 
-  it("exposes both Claude and local models", () => {
+  it("exposes Claude models (local models discovered dynamically)", () => {
     const claudeModels = models.filter((m) => isClaudeModel(m.id));
-    const localModels = models.filter((m) => !isClaudeModel(m.id));
     expect(claudeModels.length).toBeGreaterThan(0);
-    expect(localModels.length).toBeGreaterThan(0);
+    // Local models are discovered dynamically from OpenAI-compatible endpoint
+    // via listOpenAICompatModels() - see openai-compat.ts
   });
 });
 
