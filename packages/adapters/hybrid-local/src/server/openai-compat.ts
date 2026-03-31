@@ -17,7 +17,7 @@ const DANGEROUS_PATTERNS = [
   /\bsudo\b/, // privilege escalation
   /\bdd\b/, // disk dumping
   /\bfdisk\b/, // partition manipulation
-  /\bformat\b/, // format drives
+  /\bformat\b\s+[A-Za-z]:/, // Windows drive format: "format C:"
   /\bshutdown\b/, // shutdown/reboot
   /\breboot\b/, // reboot system
   /\bhalt\b/, // halt system
@@ -26,7 +26,7 @@ const DANGEROUS_PATTERNS = [
   /\bkill\s+-9\b/, // forcefully kill processes
 ];
 
-function isDangerousCommand(command: string): boolean {
+export function isDangerousCommand(command: string): boolean {
   return DANGEROUS_PATTERNS.some(pattern => pattern.test(command));
 }
 
@@ -315,15 +315,18 @@ export async function executeLocalModel(opts: {
       };
     }
 
-    // Append assistant message with tool calls
+    // Guard: limit tool calls per turn to prevent runaway execution
+    const safeToolCalls = toolCalls.slice(0, MAX_TOOLS_PER_TURN);
+    const truncatedToolCalls = toolCalls.slice(MAX_TOOLS_PER_TURN);
+
+    // Append assistant message with only the tool calls we will actually
+    // service. This keeps conversation state valid for strict providers.
     messages.push({
       role: "assistant",
       content: assistantMessage?.content ?? null,
-      tool_calls: toolCalls,
+      tool_calls: safeToolCalls,
     });
 
-    // Guard: limit tool calls per turn to prevent runaway execution
-    const safeToolCalls = toolCalls.slice(0, MAX_TOOLS_PER_TURN);
     if (toolCalls.length > MAX_TOOLS_PER_TURN) {
       await onLog("stdout", `[hybrid] Local: truncating ${toolCalls.length} tool calls to ${MAX_TOOLS_PER_TURN}\n`);
     }
@@ -374,11 +377,22 @@ export async function executeLocalModel(opts: {
       });
     }
 
-    // Guard: if we truncated tool calls, add a note so the model knows
-    if (toolCalls.length > MAX_TOOLS_PER_TURN) {
+    // Guard: if we truncated tool calls, add synthetic results for the
+    // skipped calls so tool_call_ids are always matched in history.
+    if (truncatedToolCalls.length > 0) {
+      for (const toolCall of truncatedToolCalls) {
+        toolResults.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: `Tool call skipped: system limit of ${MAX_TOOLS_PER_TURN} tool calls per turn. Try fewer calls next turn.`,
+        });
+      }
+    } else if (toolCalls.length > MAX_TOOLS_PER_TURN) {
+      // Defensive fallback: should not happen because truncatedToolCalls
+      // length is derived directly above.
       toolResults.push({
         role: "tool",
-        tool_call_id: "system",
+        tool_call_id: safeToolCalls[0]?.id ?? "unknown",
         content: `System: truncated to first ${MAX_TOOLS_PER_TURN} tools. Try fewer tool calls next turn.`,
       });
     }

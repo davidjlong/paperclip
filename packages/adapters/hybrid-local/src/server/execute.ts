@@ -52,22 +52,27 @@ const DEFAULT_QUOTA_THRESHOLD_PERCENT = 80;
  */
 async function isClaudeQuotaNearExhausted(
   threshold: number,
-  hasFallback: boolean,
+  opts: {
+    hasFallback: boolean;
+    allowExtraCredit: boolean;
+  },
   onLog: AdapterExecutionContext["onLog"],
 ): Promise<boolean> {
   if (threshold <= 0) return false;
+  const { hasFallback, allowExtraCredit } = opts;
   try {
     const quota = await getQuotaWindows();
 
-    // Quota check failed or returned no windows.
-    // If a fallback is configured, treat as exhausted (fail-closed) so we
-    // don't silently burn Claude attempts when the CLI /usage command is
-    // broken. If no fallback, fail-open so the agent can still run.
+    // Quota check unavailable:
+    // - allowExtraCredit=false => fail closed (policy)
+    // - fallback configured => fail closed (route to fallback)
+    // - otherwise fail open
     if (!quota.ok || quota.windows.length === 0) {
-      if (hasFallback) {
+      if (!allowExtraCredit || hasFallback) {
+        const mode = !allowExtraCredit ? "policy fail-closed" : "routing to fallback";
         await onLog(
           "stdout",
-          `[hybrid] Claude quota pre-check unavailable (${quota.error ?? "no windows"}) — routing to fallback\n`,
+          `[hybrid] Claude quota pre-check unavailable (${quota.error ?? "no windows"}) — ${mode}\n`,
         );
         return true;
       }
@@ -85,8 +90,14 @@ async function isClaudeQuotaNearExhausted(
       return true;
     }
     return false;
-  } catch {
-    // Unexpected error in quota check — fail-open so the agent can still run
+  } catch (error) {
+    if (!allowExtraCredit || hasFallback) {
+      const message = error instanceof Error ? error.message : String(error);
+      const mode = !allowExtraCredit ? "policy fail-closed" : "routing to fallback";
+      await onLog("stdout", `[hybrid] Claude quota pre-check error: ${message} — ${mode}\n`);
+      return true;
+    }
+    // No fallback and extra credit allowed: fail-open
     return false;
   }
 }
@@ -159,7 +170,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (shouldPreCheckQuota) {
       const nearExhausted = await isClaudeQuotaNearExhausted(
         quotaThreshold,
-        shouldPreCheckQuota,
+        {
+          hasFallback: Boolean(effectiveFallback),
+          allowExtraCredit,
+        },
         onLog,
       );
       if (nearExhausted) {
@@ -202,7 +216,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const healthy = await isLocalEndpointHealthy(localBaseUrl);
     if (!healthy) {
       if (!allowExtraCredit) {
-        const claudeQuotaBlocked = await isClaudeQuotaNearExhausted(quotaThreshold, true, onLog);
+        const claudeQuotaBlocked = await isClaudeQuotaNearExhausted(
+          quotaThreshold,
+          { hasFallback: true, allowExtraCredit },
+          onLog,
+        );
         if (claudeQuotaBlocked) {
           return {
             exitCode: 1,
@@ -274,15 +292,20 @@ async function executeClaudeWithFallback(
   const reason = claudeResult.errorCode ?? claudeResult.errorMessage ?? "unknown";
   await onLog(
     "stdout",
-    `[hybrid] Claude unavailable (${reason}). Falling back to local model: ${fallbackModel}\n`,
+    `[hybrid] Claude unavailable (${reason}). Falling back to ${isClaudeModel(fallbackModel) ? "Claude" : "local"} model: ${fallbackModel}\n`,
   );
 
-  const result = await executeLocal(ctx, fallbackModel);
+  const result = isClaudeModel(fallbackModel)
+    ? await claudeExecute({
+        ...ctx,
+        config: { ...ctx.config, model: fallbackModel },
+      })
+    : await executeLocal(ctx, fallbackModel);
   return attachRoutingMeta(result, {
     primaryModel: model,
     primaryBackend: "claude_cli",
     fallbackModel,
-    fallbackBackend: "openai_compatible",
+    fallbackBackend: isClaudeModel(fallbackModel) ? "claude_cli" : "openai_compatible",
     fallbackTriggered: true,
     fallbackReason: reason,
     preCheckTriggered: false,
@@ -316,8 +339,8 @@ async function executeLocalWithFallback(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
-    // No viable Claude fallback
-    if (!fallbackModel || !isClaudeModel(fallbackModel)) {
+    // No fallback configured
+    if (!fallbackModel) {
       const isTimeout = message.toLowerCase().includes("aborted") || message.toLowerCase().includes("timeout");
       return {
         exitCode: 1,
@@ -343,11 +366,15 @@ async function executeLocalWithFallback(
 
     await onLog(
       "stdout",
-      `[hybrid] Local model unavailable (${message}). Falling back to Claude: ${fallbackModel}\n`,
+      `[hybrid] Local model unavailable (${message}). Falling back to ${isClaudeModel(fallbackModel) ? "Claude" : "local"}: ${fallbackModel}\n`,
     );
 
-    if (!allowExtraCredit) {
-      const claudeQuotaBlocked = await isClaudeQuotaNearExhausted(quotaThreshold, true, onLog);
+    if (isClaudeModel(fallbackModel) && !allowExtraCredit) {
+      const claudeQuotaBlocked = await isClaudeQuotaNearExhausted(
+        quotaThreshold,
+        { hasFallback: true, allowExtraCredit },
+        onLog,
+      );
       if (claudeQuotaBlocked) {
         return {
           exitCode: 1,
@@ -361,16 +388,17 @@ async function executeLocalWithFallback(
       }
     }
 
-    const claudeCtx: AdapterExecutionContext = {
-      ...ctx,
-      config: { ...ctx.config, model: fallbackModel },
-    };
-    const result = await claudeExecute(claudeCtx);
+    const result = isClaudeModel(fallbackModel)
+      ? await claudeExecute({
+          ...ctx,
+          config: { ...ctx.config, model: fallbackModel },
+        })
+      : await executeLocal(ctx, fallbackModel);
     return attachRoutingMeta(result, {
       primaryModel: model,
       primaryBackend: "openai_compatible",
       fallbackModel,
-      fallbackBackend: "claude_cli",
+      fallbackBackend: isClaudeModel(fallbackModel) ? "claude_cli" : "openai_compatible",
       fallbackTriggered: true,
       fallbackReason: message,
       preCheckTriggered: false,

@@ -322,6 +322,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const showLegacyWorkingDirectoryField =
     isLocal && shouldShowLegacyWorkingDirectoryField({ isCreate, adapterConfig: config });
   const uiAdapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
+  const hybridLocalBaseUrl =
+    adapterType === "hybrid_local"
+      ? eff(
+          "adapterConfig",
+          "localBaseUrl",
+          String(config.localBaseUrl ?? "http://127.0.0.1:11434/v1"),
+        )
+      : undefined;
 
   // Fetch adapter models for the effective adapter type
   const {
@@ -329,9 +337,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     error: fetchedModelsError,
   } = useQuery({
     queryKey: selectedCompanyId
-      ? queryKeys.agents.adapterModels(selectedCompanyId, adapterType)
+      ? queryKeys.agents.adapterModels(selectedCompanyId, adapterType, hybridLocalBaseUrl)
       : ["agents", "none", "adapter-models", adapterType],
-    queryFn: () => agentsApi.adapterModels(selectedCompanyId!, adapterType),
+    queryFn: () => agentsApi.adapterModels(selectedCompanyId!, adapterType, hybridLocalBaseUrl),
     enabled: Boolean(selectedCompanyId),
   });
   const models = fetchedModels ?? externalModels ?? [];

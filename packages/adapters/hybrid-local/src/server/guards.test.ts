@@ -1,20 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { isDangerousCommand } from "./openai-compat.js";
 
 // These test the guard logic that prevents runaway or dangerous execution
 
 describe("Guard: dangerous command detection", () => {
-  const DANGEROUS_PATTERNS = [
-    /\brm\s+-rf\b/,
-    /\bsudo\b/,
-    /\bdd\b/,
-    /\bfdisk\b/,
-    /\bformat\b/,
-  ];
-
-  function isDangerousCommand(command: string): boolean {
-    return DANGEROUS_PATTERNS.some(pattern => pattern.test(command));
-  }
-
   it("blocks rm -rf", () => {
     expect(isDangerousCommand("rm -rf /app")).toBe(true);
     expect(isDangerousCommand("rm -rf /")).toBe(true);
@@ -35,6 +24,20 @@ describe("Guard: dangerous command detection", () => {
 
   it("blocks format", () => {
     expect(isDangerousCommand("format C:")).toBe(true);
+  });
+
+  it("does not block common --format flags", () => {
+    expect(isDangerousCommand("git log --format=\"%H %s\"")).toBe(false);
+    expect(isDangerousCommand("git diff --format=stat")).toBe(false);
+    expect(isDangerousCommand("python -c \"print('{}'.format(1))\"")).toBe(false);
+  });
+
+  it("blocks other dangerous system commands", () => {
+    expect(isDangerousCommand("shutdown now")).toBe(true);
+    expect(isDangerousCommand("reboot")).toBe(true);
+    expect(isDangerousCommand("poweroff")).toBe(true);
+    expect(isDangerousCommand("pkill node")).toBe(true);
+    expect(isDangerousCommand("kill -9 1234")).toBe(true);
   });
 
   it("allows safe commands", () => {

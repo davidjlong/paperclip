@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { resolveBaseUrl, executeLocalModel } from "./openai-compat.js";
+import { resolveBaseUrl, executeLocalModel, isDangerousCommand } from "./openai-compat.js";
 
 
 describe("resolveBaseUrl", () => {
@@ -135,5 +135,77 @@ describe("tool output truncation — constant validation", () => {
 
     expect(result).toBe(shortOutput);
     expect(result).not.toContain("[output truncated:");
+  });
+});
+
+describe("dangerous command guards", () => {
+  it("does not block common --format usage", () => {
+    expect(isDangerousCommand("git log --format=\"%H %s\"")).toBe(false);
+    expect(isDangerousCommand("git diff --format=stat")).toBe(false);
+  });
+
+  it("still blocks Windows drive format command", () => {
+    expect(isDangerousCommand("format C:")).toBe(true);
+  });
+});
+
+describe("tool-call truncation integrity", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("keeps assistant/tool history consistent when tool calls exceed per-turn cap", async () => {
+    const toolCalls = Array.from({ length: 6 }, (_, i) => ({
+      id: `tool-${i + 1}`,
+      type: "function" as const,
+      function: { name: "bash", arguments: JSON.stringify({ command: "echo ok" }) },
+    }));
+
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          model: "qwen2.5-coder:7b",
+          choices: [{ message: { role: "assistant", content: null, tool_calls: toolCalls }, finish_reason: "tool_calls" }],
+          usage: { prompt_tokens: 20, completion_tokens: 10 },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          model: "qwen2.5-coder:7b",
+          choices: [{ message: { role: "assistant", content: "done" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 15, completion_tokens: 5 },
+        }),
+      });
+
+    await executeLocalModel({
+      baseUrl: "http://localhost:11434/v1",
+      model: "qwen2.5-coder:7b",
+      prompt: "Run tool checks",
+      cwd: "/tmp",
+      enableTools: true,
+      timeoutMs: 15_000,
+      onLog: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const secondRequestBody = JSON.parse(
+      (global.fetch as ReturnType<typeof vi.fn>).mock.calls[1][1].body as string,
+    ) as {
+      messages: Array<{
+        role: string;
+        tool_calls?: Array<{ id: string }>;
+        tool_call_id?: string;
+        content?: string;
+      }>;
+    };
+
+    const assistantWithTools = secondRequestBody.messages.find((m) => m.role === "assistant" && Array.isArray(m.tool_calls));
+    expect(assistantWithTools?.tool_calls).toHaveLength(5);
+
+    const toolMessages = secondRequestBody.messages.filter((m) => m.role === "tool");
+    expect(toolMessages).toHaveLength(6);
+    expect(toolMessages.some((m) => m.tool_call_id === "tool-6" && String(m.content ?? "").includes("Tool call skipped"))).toBe(true);
   });
 });
