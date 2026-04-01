@@ -488,6 +488,7 @@ async function executeLocal(
     cwd: effectiveCwd,
     enableTools: true,
     timeoutMs: timeoutSec * 1000,
+    maxTotalTokens: asNumber(config.maxTotalTokens, 300_000),
     onLog,
   });
 

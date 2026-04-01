@@ -4,6 +4,7 @@ import {
   Field,
   ToggleField,
   DraftInput,
+  help,
 } from "../../components/agent-config-primitives";
 
 const inputClass =
@@ -75,6 +76,35 @@ export function HybridLocalConfigFields(props: AdapterConfigFieldsProps) {
             mark("adapterConfig", "quotaThresholdPercent", v);
           }}
         />
+      </Field>
+
+      <Field
+        label="Max total tokens"
+        hint={help.maxTotalTokens}
+      >
+        {isCreate ? (
+          <input
+            type="number"
+            min={1}
+            className={inputClass}
+            value={props.values!.maxTotalTokens}
+            onChange={(e) => props.set!({ maxTotalTokens: Number(e.target.value) })}
+          />
+        ) : (
+          <DraftInput
+            value={String(
+              eff(
+                "adapterConfig",
+                "maxTotalTokens",
+                Number(config.maxTotalTokens ?? 300000),
+              ),
+            )}
+            onCommit={(v) => mark("adapterConfig", "maxTotalTokens", Number(v) || 300000)}
+            immediate
+            className={inputClass}
+            placeholder="300000"
+          />
+        )}
       </Field>
 
       <ToggleField

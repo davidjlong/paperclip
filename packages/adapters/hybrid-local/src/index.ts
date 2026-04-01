@@ -40,6 +40,7 @@ Core fields:
 - chrome (boolean, optional): pass --chrome when running Claude
 - promptTemplate (string, optional): run prompt template
 - maxTurnsPerRun (number, optional): max turns for one Claude run
+- maxTotalTokens (number, optional): max cumulative input + output tokens for local tool-use runs (default: 300000)
 - dangerouslySkipPermissions (boolean, optional): pass --dangerously-skip-permissions to Claude
 - command (string, optional): Claude CLI command (defaults to "claude")
 - extraArgs (string[], optional): additional CLI args for Claude
@@ -102,6 +103,6 @@ Notes:
 - Claude runs inherit all claude_local behavior (sessions, skills, quota).
 - Local runs are stateless (no session resume).
 - The local endpoint must be running with a model loaded for local routing to work.
-- Token limits: 30 tool turns max, 100k tokens total, 5 tools per turn max, 1MB output per command.
+- Token limits: 30 tool turns max, 300k tokens total by default, 5 tools per turn max, 1MB output per command.
 - Guards: Dangerous command blocklist (rm -rf, sudo, dd, fdisk, format, shutdown, reboot, halt, poweroff, pkill, kill -9).
 `;

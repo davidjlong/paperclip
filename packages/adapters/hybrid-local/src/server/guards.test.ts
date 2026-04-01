@@ -57,26 +57,26 @@ describe("Guard: dangerous command detection", () => {
 });
 
 describe("Guard: token accumulation", () => {
-  const MAX_TOTAL_TOKENS = 100_000;
+  const MAX_TOTAL_TOKENS = 300_000;
 
   function checkTokenLimit(inputTokens: number, outputTokens: number): boolean {
     return inputTokens + outputTokens >= MAX_TOTAL_TOKENS;
   }
 
   it("allows under limit", () => {
-    expect(checkTokenLimit(50_000, 40_000)).toBe(false);
+    expect(checkTokenLimit(150_000, 100_000)).toBe(false);
   });
 
   it("stops at limit", () => {
-    expect(checkTokenLimit(50_000, 50_000)).toBe(true);
+    expect(checkTokenLimit(150_000, 150_000)).toBe(true);
   });
 
   it("stops over limit", () => {
-    expect(checkTokenLimit(60_000, 50_000)).toBe(true);
+    expect(checkTokenLimit(200_000, 150_000)).toBe(true);
   });
 
   it("stops at exact limit", () => {
-    expect(checkTokenLimit(100_000, 0)).toBe(true);
+    expect(checkTokenLimit(300_000, 0)).toBe(true);
   });
 });
 

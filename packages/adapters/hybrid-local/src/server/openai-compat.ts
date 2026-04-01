@@ -1,4 +1,5 @@
 import type { UsageSummary } from "@paperclipai/adapter-utils";
+import { asNumber } from "@paperclipai/adapter-utils/server-utils";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -7,7 +8,7 @@ const DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
 const MAX_TOOL_TURNS = 30;
 const MAX_TOOLS_PER_TURN = 5;
 const MAX_MESSAGE_HISTORY = 1000;
-const MAX_TOTAL_TOKENS = 100_000; // Cap across all 30 turns
+const DEFAULT_MAX_TOTAL_TOKENS = 300_000; // Cap across all 30 turns unless overridden in adapter config
 const BASH_TIMEOUT_MS = 120_000;
 const MAX_TOOL_OUTPUT_CHARS = 8_000; // ~2k tokens — prevents context overflow from large ls/cat outputs
 
@@ -186,9 +187,11 @@ export async function executeLocalModel(opts: {
   cwd: string;
   enableTools: boolean;
   timeoutMs: number;
+  maxTotalTokens?: number;
   onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
 }): Promise<OpenAICompatResult> {
   const { baseUrl, model, prompt, systemPrompt, cwd, enableTools, timeoutMs, onLog } = opts;
+  const maxTotalTokens = asNumber(opts.maxTotalTokens, DEFAULT_MAX_TOTAL_TOKENS);
   const url = `${baseUrl}/chat/completions`;
   const deadline = Date.now() + timeoutMs;
 
@@ -237,8 +240,8 @@ export async function executeLocalModel(opts: {
 
   while (turn < MAX_TOOL_TURNS) {
     // Guard: check token accumulation across all turns
-    if (totalUsage.inputTokens + totalUsage.outputTokens >= MAX_TOTAL_TOKENS) {
-      await onLog("stderr", `[hybrid] Local: token limit reached (${totalUsage.inputTokens + totalUsage.outputTokens}/${MAX_TOTAL_TOKENS})\n`);
+    if (totalUsage.inputTokens + totalUsage.outputTokens >= maxTotalTokens) {
+      await onLog("stderr", `[hybrid] Local: token limit reached (${totalUsage.inputTokens + totalUsage.outputTokens}/${maxTotalTokens})\n`);
       break;
     }
 
